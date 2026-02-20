@@ -6,14 +6,28 @@ from pathlib import Path
 from nanobot.config.schema import Config
 
 
+# Global base directory override (set by CLI --basedir option)
+_BASE_DIR: Path | None = None
+
+
+def set_base_dir(path: Path) -> None:
+    """Set the base directory for config and data."""
+    global _BASE_DIR
+    _BASE_DIR = path
+
+
 def get_config_path() -> Path:
     """Get the default configuration file path."""
-    return Path.home() / ".nanobot" / "config.json"
+    base_dir = _BASE_DIR or Path.home() / ".nanobot"
+    return base_dir / "config.json"
 
 
 def get_data_dir() -> Path:
     """Get the nanobot data directory."""
+    if _BASE_DIR:
+        return _BASE_DIR / "data"
     from nanobot.utils.helpers import get_data_path
+
     return get_data_path()
 
 
