@@ -183,6 +183,28 @@ class ChannelsConfig(Base):
     email: EmailConfig = Field(default_factory=EmailConfig)
     slack: SlackConfig = Field(default_factory=SlackConfig)
     qq: QQConfig = Field(default_factory=QQConfig)
+    observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
+
+
+class ObservabilitySettings(BaseModel):
+    """Observability configuration."""
+
+    enabled: bool = Field(default=False, description="Observability aktivieren")
+    otlp_endpoint: str | None = Field(
+        default=None, description="OTLP Endpoint (Jaeger Cloud, EVTL, Self-Hosting)"
+    )
+    sampling_ratio: float = Field(default=0.1, description="Sampling Ratio für Traces (0.1 = 10%)")
+    litellm_proxy: LitellmProxySettings = Field(
+        default_factory=LitellmProxySettings, description="Litellm Proxy Settings"
+    )
+
+
+class LitellmProxySettings(BaseModel):
+    """Litellm Proxy Configuration."""
+
+    enabled: bool = Field(default=False, description="Litellm Proxy aktivieren")
+    proxy_url: str = Field(default="", description="Proxy URL")
+    model: str = Field(default="litellm/claude-opus-4-5", description="Model für Proxy")
 
 
 class AgentDefaults(Base):
