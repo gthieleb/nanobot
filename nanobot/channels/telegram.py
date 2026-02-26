@@ -224,6 +224,26 @@ class TelegramChannel(BaseChannel):
             return "audio"
         return "document"
 
+    def _build_keyboard(self, buttons: list) -> InlineKeyboardMarkup | ReplyKeyboardMarkup | None:
+        """Build keyboard markup based on config."""
+        if not buttons:
+            return None
+        
+        if self.config.keyboard_button_enabled:
+            # Inline keyboard - buttons attached to message
+            keyboard = [
+                [InlineKeyboardButton(label, callback_data=label) for label, _ in row]
+                for row in buttons
+            ]
+            return InlineKeyboardMarkup(keyboard)
+        else:
+            # Reply keyboard - buttons under input field, one-time
+            keyboard = [
+                [KeyboardButton(label) for label, _ in row]
+                for row in buttons
+            ]
+            return ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    
     async def send(self, msg: OutboundMessage) -> None:
         """Send a message through Telegram."""
         if not self._app:
@@ -303,23 +323,7 @@ class TelegramChannel(BaseChannel):
                 try:
                     html = _markdown_to_telegram_html(chunk)
                     
-                    # Build keyboard if buttons provided
-                    reply_markup = None
-                    if msg.buttons:
-                        if self.config.keyboard_button_enabled:
-                            # Inline keyboard - buttons attached to message
-                            keyboard = [
-                                [InlineKeyboardButton(label, callback_data=label) for label, _ in row]
-                                for row in msg.buttons
-                            ]
-                            reply_markup = InlineKeyboardMarkup(keyboard)
-                        else:
-                            # Reply keyboard - buttons under input field, one-time
-                            keyboard = [
-                                [KeyboardButton(label) for label, _ in row]
-                                for row in msg.buttons
-                            ]
-                            reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+                    reply_markup = self._build_keyboard(msg.buttons) if msg.buttons else None
                     
                     await self._app.bot.send_message(
                         chat_id=chat_id, 
@@ -331,21 +335,7 @@ class TelegramChannel(BaseChannel):
                 except Exception as e:
                     logger.warning("HTML parse failed, falling back to plain text: {}", e)
                     try:
-                        # Build keyboard if buttons provided
-                        reply_markup = None
-                        if msg.buttons:
-                            if self.config.keyboard_button_enabled:
-                                keyboard = [
-                                    [InlineKeyboardButton(label, callback_data=label) for label, _ in row]
-                                    for row in msg.buttons
-                                ]
-                                reply_markup = InlineKeyboardMarkup(keyboard)
-                            else:
-                                keyboard = [
-                                    [KeyboardButton(label) for label, _ in row]
-                                    for row in msg.buttons
-                                ]
-                                reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+                        reply_markup = self._build_keyboard(msg.buttons) if msg.buttons else None
                         
                         await self._app.bot.send_message(
                             chat_id=chat_id, 
