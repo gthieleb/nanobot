@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 from loguru import logger
-from telegram import BotCommand, Update, ReplyParameters, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import BotCommand, Update, ReplyParameters, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from telegram.request import HTTPXRequest
 
@@ -161,14 +161,12 @@ class TelegramChannel(BaseChannel):
             )
         )
         
-        # Add callback query handler for inline keyboards (if enabled)
+        # Add callback query handler and poll handler (if enabled)
         if self.config.keyboard_buttons_enabled:
             self._app.add_handler(CallbackQueryHandler(self._on_callback_query))
-        
-        # Add poll answer handler
-        from telegram.ext import PollAnswerHandler
-        self._app.add_handler(PollAnswerHandler(self._on_poll_answer))
-        logger.debug("Poll support enabled")
+            from telegram.ext import PollAnswerHandler
+            self._app.add_handler(PollAnswerHandler(self._on_poll_answer))
+            logger.debug("Inline keyboards and polls enabled")
         
         logger.info("Starting Telegram bot (polling mode)...")
         
@@ -231,25 +229,17 @@ class TelegramChannel(BaseChannel):
             return "audio"
         return "document"
 
-    def _build_keyboard(self, buttons: list) -> InlineKeyboardMarkup | ReplyKeyboardMarkup | None:
-        """Build keyboard markup based on config."""
-        if not buttons:
+    def _build_keyboard(self, buttons: list) -> InlineKeyboardMarkup | None:
+        """Build inline keyboard markup if feature is enabled."""
+        if not buttons or not self.config.keyboard_buttons_enabled:
             return None
         
-        if self.config.keyboard_buttons_enabled:
-            # Inline keyboard - buttons attached to message
-            keyboard = [
-                [InlineKeyboardButton(label, callback_data=label) for label, _ in row]
-                for row in buttons
-            ]
-            return InlineKeyboardMarkup(keyboard)
-        else:
-            # Reply keyboard - buttons under input field, one-time
-            keyboard = [
-                [KeyboardButton(label) for label, _ in row]
-                for row in buttons
-            ]
-            return ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+        # Inline keyboard - buttons attached to message
+        keyboard = [
+            [InlineKeyboardButton(label, callback_data=label) for label, _ in row]
+            for row in buttons
+        ]
+        return InlineKeyboardMarkup(keyboard)
     
     async def send(self, msg: OutboundMessage) -> None:
         """Send a message through Telegram."""
@@ -299,8 +289,8 @@ class TelegramChannel(BaseChannel):
                     reply_parameters=reply_params
                 )
 
-        # Send poll if provided
-        if msg.poll:
+        # Send poll if provided (only if feature enabled)
+        if msg.poll and self.config.keyboard_buttons_enabled:
             try:
                 poll_msg = await self._app.bot.send_poll(
                     chat_id=chat_id,
