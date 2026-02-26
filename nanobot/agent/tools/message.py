@@ -65,6 +65,21 @@ class MessageTool(Tool):
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Optional: list of file paths to attach (images, audio, documents)"
+                },
+                "buttons": {
+                    "type": "array",
+                    "description": "Optional: inline keyboard buttons for Telegram. List of rows, each row is list of {label, callback_data} objects.",
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "label": {"type": "string", "description": "Button text"},
+                                "callback_data": {"type": "string", "description": "Data sent when button is clicked"}
+                            },
+                            "required": ["label", "callback_data"]
+                        }
+                    }
                 }
             },
             "required": ["content"]
@@ -77,6 +92,7 @@ class MessageTool(Tool):
         chat_id: str | None = None,
         message_id: str | None = None,
         media: list[str] | None = None,
+        buttons: list[list[dict[str, str]]] | None = None,
         **kwargs: Any
     ) -> str:
         channel = channel or self._default_channel
@@ -89,6 +105,13 @@ class MessageTool(Tool):
         if not self._send_callback:
             return "Error: Message sending not configured"
 
+        # Convert buttons dict format to tuple format for OutboundMessage
+        buttons_tuples: list[list[tuple[str, str]]] = []
+        if buttons:
+            for row in buttons:
+                row_tuples = [(btn["label"], btn["callback_data"]) for btn in row]
+                buttons_tuples.append(row_tuples)
+
         msg = OutboundMessage(
             channel=channel,
             chat_id=chat_id,
@@ -96,13 +119,15 @@ class MessageTool(Tool):
             media=media or [],
             metadata={
                 "message_id": message_id,
-            }
+            },
+            buttons=buttons_tuples,
         )
 
         try:
             await self._send_callback(msg)
             self._sent_in_turn = True
             media_info = f" with {len(media)} attachments" if media else ""
-            return f"Message sent to {channel}:{chat_id}{media_info}"
+            buttons_info = f" with {sum(len(r) for r in buttons_tuples)} buttons" if buttons_tuples else ""
+            return f"Message sent to {channel}:{chat_id}{media_info}{buttons_info}"
         except Exception as e:
             return f"Error sending message: {str(e)}"
