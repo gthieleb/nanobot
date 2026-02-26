@@ -12,7 +12,7 @@ class TestBuildKeyboard:
     
     def test_no_buttons_returns_none(self):
         """Empty buttons should return None."""
-        config = TelegramConfig(token="test", keyboard_button_enabled=False)
+        config = TelegramConfig(token="test", keyboard_buttons_enabled=False)
         channel = TelegramChannel(config, MagicMock())
         
         result = channel._build_keyboard([])
@@ -21,7 +21,7 @@ class TestBuildKeyboard:
     
     def test_no_buttons_none_input(self):
         """None input should return None."""
-        config = TelegramConfig(token="test", keyboard_button_enabled=False)
+        config = TelegramConfig(token="test", keyboard_buttons_enabled=False)
         channel = TelegramChannel(config, MagicMock())
         
         result = channel._build_keyboard(None)
@@ -29,8 +29,8 @@ class TestBuildKeyboard:
         assert result is None
     
     def test_reply_keyboard_when_disabled(self):
-        """Should build ReplyKeyboardMarkup when keyboard_button_enabled=False."""
-        config = TelegramConfig(token="test", keyboard_button_enabled=False)
+        """Should build ReplyKeyboardMarkup when keyboard_buttons_enabled=False."""
+        config = TelegramConfig(token="test", keyboard_buttons_enabled=False)
         channel = TelegramChannel(config, MagicMock())
         
         # buttons format: [[(label, callback_data), ...], ...]
@@ -47,8 +47,8 @@ class TestBuildKeyboard:
         assert result.one_time_keyboard is True
     
     def test_inline_keyboard_when_enabled(self):
-        """Should build InlineKeyboardMarkup when keyboard_button_enabled=True."""
-        config = TelegramConfig(token="test", keyboard_button_enabled=True)
+        """Should build InlineKeyboardMarkup when keyboard_buttons_enabled=True."""
+        config = TelegramConfig(token="test", keyboard_buttons_enabled=True)
         channel = TelegramChannel(config, MagicMock())
         
         buttons = [
@@ -64,7 +64,7 @@ class TestBuildKeyboard:
     
     def test_inline_keyboard_button_callback_data_is_label(self):
         """Inline keyboard buttons should use label as callback_data."""
-        config = TelegramConfig(token="test", keyboard_button_enabled=True)
+        config = TelegramConfig(token="test", keyboard_buttons_enabled=True)
         channel = TelegramChannel(config, MagicMock())
         
         buttons = [[("My Button", "ignored_callback")]]
@@ -77,7 +77,7 @@ class TestBuildKeyboard:
     
     def test_single_row_buttons(self):
         """Should handle single row of buttons."""
-        config = TelegramConfig(token="test", keyboard_button_enabled=True)
+        config = TelegramConfig(token="test", keyboard_buttons_enabled=True)
         channel = TelegramChannel(config, MagicMock())
         
         buttons = [[("A", "a"), ("B", "b"), ("C", "c")]]
@@ -89,7 +89,7 @@ class TestBuildKeyboard:
     
     def test_multiple_rows_buttons(self):
         """Should handle multiple rows of buttons."""
-        config = TelegramConfig(token="test", keyboard_button_enabled=True)
+        config = TelegramConfig(token="test", keyboard_buttons_enabled=True)
         channel = TelegramChannel(config, MagicMock())
         
         buttons = [
@@ -113,10 +113,10 @@ class TestConfigKey:
         """Default should be False (disabled)."""
         config = TelegramConfig(token="test")
         
-        assert config.keyboard_button_enabled is False
+        assert config.keyboard_buttons_enabled is False
     
     def test_config_can_enable(self):
         """Should be able to enable via config."""
-        config = TelegramConfig(token="test", keyboard_button_enabled=True)
+        config = TelegramConfig(token="test", keyboard_buttons_enabled=True)
         
-        assert config.keyboard_button_enabled is True
+        assert config.keyboard_buttons_enabled is True

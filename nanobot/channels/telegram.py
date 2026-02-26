@@ -160,7 +160,7 @@ class TelegramChannel(BaseChannel):
         )
         
         # Add callback query handler for inline keyboards (if enabled)
-        if self.config.keyboard_button_enabled:
+        if self.config.keyboard_buttons_enabled:
             self._app.add_handler(CallbackQueryHandler(self._on_callback_query))
         
         # Add poll answer handler
@@ -186,7 +186,7 @@ class TelegramChannel(BaseChannel):
         
         # Start polling (this runs until stopped)
         allowed_updates = ["message", "poll", "poll_answer"]
-        if self.config.keyboard_button_enabled:
+        if self.config.keyboard_buttons_enabled:
             allowed_updates.append("callback_query")
         await self._app.updater.start_polling(
             allowed_updates=allowed_updates,
@@ -229,7 +229,7 @@ class TelegramChannel(BaseChannel):
         if not buttons:
             return None
         
-        if self.config.keyboard_button_enabled:
+        if self.config.keyboard_buttons_enabled:
             # Inline keyboard - buttons attached to message
             keyboard = [
                 [InlineKeyboardButton(label, callback_data=label) for label, _ in row]
