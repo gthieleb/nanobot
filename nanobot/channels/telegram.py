@@ -9,7 +9,7 @@ from telegram import BotCommand, Update, ReplyParameters, InlineKeyboardButton, 
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from telegram.request import HTTPXRequest
 
-from nanobot.bus.events import OutboundMessage
+from nanobot.bus.events import OutboundMessage, PollData
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
 from nanobot.config.schema import TelegramConfig
@@ -163,6 +163,11 @@ class TelegramChannel(BaseChannel):
             self._app.add_handler(CallbackQueryHandler(self._on_callback_query))
             logger.debug("Inline keyboards enabled")
         
+        # Add poll answer handler
+        from telegram.ext import PollAnswerHandler
+        self._app.add_handler(PollAnswerHandler(self._on_poll_answer))
+        logger.debug("Poll support enabled")
+        
         logger.info("Starting Telegram bot (polling mode)...")
         
         # Initialize and start polling
@@ -183,6 +188,7 @@ class TelegramChannel(BaseChannel):
         allowed_updates = ["message"]
         if self.config.inline_keyboards:
             allowed_updates.append("callback_query")
+        allowed_updates.extend(["poll", "poll_answer"])  # For poll support
         await self._app.updater.start_polling(
             allowed_updates=allowed_updates,
             drop_pending_updates=True  # Ignore old messages on startup
@@ -266,6 +272,27 @@ class TelegramChannel(BaseChannel):
                     text=f"[Failed to send: {filename}]",
                     reply_parameters=reply_params
                 )
+
+        # Send poll if provided
+        if msg.poll:
+            try:
+                await self._app.bot.send_poll(
+                    chat_id=chat_id,
+                    question=msg.poll.question,
+                    options=msg.poll.options,
+                    is_anonymous=msg.poll.is_anonymous,
+                    allows_multiple_answers=msg.poll.allows_multiple_answers,
+                    reply_parameters=reply_params
+                )
+                logger.debug("Sent poll: {}", msg.poll.question[:50])
+            except Exception as e:
+                logger.error("Failed to send poll: {}", e)
+                await self._app.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"[Failed to send poll: {msg.poll.question}]",
+                    reply_parameters=reply_params
+                )
+            return  # Don't send text content when poll is sent
 
         # Send text content
         if msg.content and msg.content != "[empty message]":
@@ -461,11 +488,20 @@ class TelegramChannel(BaseChannel):
             logger.warning("Callback query without chat_id")
             return
         
-        # Answer the callback query to remove the loading state
-        await query.answer()
-        
         # The callback_data IS the button label (semantic content)
         button_label = query.data or ""
+        
+        # Answer the callback query to remove the loading state
+        # Show a brief notification that the button was clicked
+        await query.answer(text=f"✓ {button_label[:30]}", show_alert=False)
+        
+        # Remove the inline keyboard from the original message
+        # This prevents multiple clicks on the same buttons
+        if query.message:
+            try:
+                await query.message.edit_reply_markup(reply_markup=None)
+            except Exception as e:
+                logger.debug("Could not remove keyboard: {}", e)
         
         # Format as: [button:Label]
         content = f"[button:{button_label}]"
@@ -491,6 +527,32 @@ class TelegramChannel(BaseChannel):
                 "is_callback": True
             }
         )
+    
+    async def _on_poll_answer(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle poll answer submissions."""
+        if not update.poll_answer:
+            return
+        
+        poll_answer = update.poll_answer
+        user = poll_answer.user
+        if not user:
+            logger.warning("Poll answer without user")
+            return
+        
+        sender_id = self._sender_id(user)
+        poll_id = poll_answer.poll_id
+        option_ids = poll_answer.option_ids or []
+        
+        # Format as: [poll:ID:options]
+        options_str = ",".join(str(i) for i in option_ids)
+        content = f"[poll:{poll_id}:{options_str}]"
+        
+        logger.debug("Telegram poll answer from {}: poll {} options {}", sender_id, poll_id, options_str)
+        
+        # Note: poll_answer doesn't have chat_id, we need to track polls we sent
+        # For now, just log it - would need poll tracking for full functionality
+        logger.info("Poll answer received: user {} voted options {} on poll {}", 
+                    sender_id, options_str, poll_id)
     
     def _start_typing(self, chat_id: str) -> None:
         """Start sending 'typing...' indicator for a chat."""
