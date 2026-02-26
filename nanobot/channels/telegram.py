@@ -277,7 +277,7 @@ class TelegramChannel(BaseChannel):
                     reply_markup = None
                     if msg.buttons and self.config.inline_keyboards:
                         keyboard = [
-                            [InlineKeyboardButton(label, callback_data=data) for label, data in row]
+                            [InlineKeyboardButton(label, callback_data=label) for label, _ in row]
                             for row in msg.buttons
                         ]
                         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -296,7 +296,7 @@ class TelegramChannel(BaseChannel):
                         reply_markup = None
                         if msg.buttons and self.config.inline_keyboards:
                             keyboard = [
-                                [InlineKeyboardButton(label, callback_data=data) for label, data in row]
+                                [InlineKeyboardButton(label, callback_data=label) for label, _ in row]
                                 for row in msg.buttons
                             ]
                             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -464,14 +464,13 @@ class TelegramChannel(BaseChannel):
         # Answer the callback query to remove the loading state
         await query.answer()
         
-        # Build content from callback data
-        callback_data = query.data or ""
-        button_text = getattr(query, 'message', None) and getattr(query.message, 'text', '') or ""
+        # The callback_data IS the button label (semantic content)
+        button_label = query.data or ""
         
-        # Format as: [button:callback_data] original message text
-        content = f"[button:{callback_data}]"
+        # Format as: [button:Label]
+        content = f"[button:{button_label}]"
         
-        logger.debug("Telegram callback query from {}: {}", sender_id, callback_data)
+        logger.debug("Telegram callback query from {}: {}", sender_id, button_label)
         
         str_chat_id = str(chat_id)
         
@@ -485,7 +484,7 @@ class TelegramChannel(BaseChannel):
             content=content,
             metadata={
                 "callback_query_id": query.id,
-                "callback_data": callback_data,
+                "button_label": button_label,
                 "user_id": user.id,
                 "username": user.username,
                 "first_name": user.first_name,
