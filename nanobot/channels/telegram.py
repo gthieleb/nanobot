@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 from loguru import logger
-from telegram import BotCommand, Update, ReplyParameters, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import BotCommand, Update, ReplyParameters, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from telegram.request import HTTPXRequest
 
@@ -127,6 +127,7 @@ class TelegramChannel(BaseChannel):
         self._app: Application | None = None
         self._chat_ids: dict[str, int] = {}  # Map sender_id to chat_id for replies
         self._typing_tasks: dict[str, asyncio.Task] = {}  # chat_id -> typing loop task
+        self._poll_chats: dict[str, str] = {}  # poll_id -> chat_id for poll answer routing
     
     async def start(self) -> None:
         """Start the Telegram bot with long polling."""
@@ -158,10 +159,9 @@ class TelegramChannel(BaseChannel):
             )
         )
         
-        # Add callback query handler for inline keyboard button clicks (if enabled)
+        # Add callback query handler for inline keyboards (if enabled)
         if self.config.inline_keyboards:
             self._app.add_handler(CallbackQueryHandler(self._on_callback_query))
-            logger.debug("Inline keyboards enabled")
         
         # Add poll answer handler
         from telegram.ext import PollAnswerHandler
@@ -185,10 +185,9 @@ class TelegramChannel(BaseChannel):
             logger.warning("Failed to register bot commands: {}", e)
         
         # Start polling (this runs until stopped)
-        allowed_updates = ["message"]
+        allowed_updates = ["message", "poll", "poll_answer"]
         if self.config.inline_keyboards:
             allowed_updates.append("callback_query")
-        allowed_updates.extend(["poll", "poll_answer"])  # For poll support
         await self._app.updater.start_polling(
             allowed_updates=allowed_updates,
             drop_pending_updates=True  # Ignore old messages on startup
@@ -276,7 +275,7 @@ class TelegramChannel(BaseChannel):
         # Send poll if provided
         if msg.poll:
             try:
-                await self._app.bot.send_poll(
+                poll_msg = await self._app.bot.send_poll(
                     chat_id=chat_id,
                     question=msg.poll.question,
                     options=msg.poll.options,
@@ -284,7 +283,11 @@ class TelegramChannel(BaseChannel):
                     allows_multiple_answers=msg.poll.allows_multiple_answers,
                     reply_parameters=reply_params
                 )
-                logger.debug("Sent poll: {}", msg.poll.question[:50])
+                # Track poll for answer routing
+                if poll_msg and poll_msg.poll:
+                    poll_id = poll_msg.poll.id
+                    self._poll_chats[poll_id] = str(chat_id)
+                    logger.debug("Sent poll {} to chat {}: {}", poll_id, chat_id, msg.poll.question[:50])
             except Exception as e:
                 logger.error("Failed to send poll: {}", e)
                 await self._app.bot.send_message(
@@ -300,14 +303,23 @@ class TelegramChannel(BaseChannel):
                 try:
                     html = _markdown_to_telegram_html(chunk)
                     
-                    # Build inline keyboard if buttons provided and enabled
+                    # Build keyboard if buttons provided
                     reply_markup = None
-                    if msg.buttons and self.config.inline_keyboards:
-                        keyboard = [
-                            [InlineKeyboardButton(label, callback_data=label) for label, _ in row]
-                            for row in msg.buttons
-                        ]
-                        reply_markup = InlineKeyboardMarkup(keyboard)
+                    if msg.buttons:
+                        if self.config.inline_keyboards:
+                            # Inline keyboard - buttons attached to message
+                            keyboard = [
+                                [InlineKeyboardButton(label, callback_data=label) for label, _ in row]
+                                for row in msg.buttons
+                            ]
+                            reply_markup = InlineKeyboardMarkup(keyboard)
+                        else:
+                            # Reply keyboard - buttons under input field, one-time
+                            keyboard = [
+                                [KeyboardButton(label) for label, _ in row]
+                                for row in msg.buttons
+                            ]
+                            reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
                     
                     await self._app.bot.send_message(
                         chat_id=chat_id, 
@@ -319,14 +331,21 @@ class TelegramChannel(BaseChannel):
                 except Exception as e:
                     logger.warning("HTML parse failed, falling back to plain text: {}", e)
                     try:
-                        # Build inline keyboard if buttons provided and enabled
+                        # Build keyboard if buttons provided
                         reply_markup = None
-                        if msg.buttons and self.config.inline_keyboards:
-                            keyboard = [
-                                [InlineKeyboardButton(label, callback_data=label) for label, _ in row]
-                                for row in msg.buttons
-                            ]
-                            reply_markup = InlineKeyboardMarkup(keyboard)
+                        if msg.buttons:
+                            if self.config.inline_keyboards:
+                                keyboard = [
+                                    [InlineKeyboardButton(label, callback_data=label) for label, _ in row]
+                                    for row in msg.buttons
+                                ]
+                                reply_markup = InlineKeyboardMarkup(keyboard)
+                            else:
+                                keyboard = [
+                                    [KeyboardButton(label) for label, _ in row]
+                                    for row in msg.buttons
+                                ]
+                                reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
                         
                         await self._app.bot.send_message(
                             chat_id=chat_id, 
@@ -488,23 +507,21 @@ class TelegramChannel(BaseChannel):
             logger.warning("Callback query without chat_id")
             return
         
-        # The callback_data IS the button label (semantic content)
+        # The callback_data IS the button label
         button_label = query.data or ""
         
         # Answer the callback query to remove the loading state
-        # Show a brief notification that the button was clicked
         await query.answer(text=f"✓ {button_label[:30]}", show_alert=False)
         
         # Remove the inline keyboard from the original message
-        # This prevents multiple clicks on the same buttons
         if query.message:
             try:
                 await query.message.edit_reply_markup(reply_markup=None)
             except Exception as e:
                 logger.debug("Could not remove keyboard: {}", e)
         
-        # Format as: [button:Label]
-        content = f"[button:{button_label}]"
+        # Send button label directly as message content
+        content = button_label
         
         logger.debug("Telegram callback query from {}: {}", sender_id, button_label)
         
@@ -513,7 +530,7 @@ class TelegramChannel(BaseChannel):
         # Start typing indicator before processing
         self._start_typing(str_chat_id)
         
-        # Forward to the message bus as a regular message
+        # Forward to the message bus
         await self._handle_message(
             sender_id=sender_id,
             chat_id=str_chat_id,
@@ -543,16 +560,35 @@ class TelegramChannel(BaseChannel):
         poll_id = poll_answer.poll_id
         option_ids = poll_answer.option_ids or []
         
+        # Find chat_id from tracked polls
+        chat_id = self._poll_chats.get(poll_id)
+        if not chat_id:
+            logger.warning("Poll answer for unknown poll: {}", poll_id)
+            return
+        
         # Format as: [poll:ID:options]
         options_str = ",".join(str(i) for i in option_ids)
         content = f"[poll:{poll_id}:{options_str}]"
         
         logger.debug("Telegram poll answer from {}: poll {} options {}", sender_id, poll_id, options_str)
         
-        # Note: poll_answer doesn't have chat_id, we need to track polls we sent
-        # For now, just log it - would need poll tracking for full functionality
-        logger.info("Poll answer received: user {} voted options {} on poll {}", 
-                    sender_id, options_str, poll_id)
+        # Start typing indicator before processing
+        self._start_typing(chat_id)
+        
+        # Forward to the message bus
+        await self._handle_message(
+            sender_id=sender_id,
+            chat_id=chat_id,
+            content=content,
+            metadata={
+                "poll_id": poll_id,
+                "option_ids": option_ids,
+                "user_id": user.id,
+                "username": user.username,
+                "first_name": user.first_name,
+                "is_poll_answer": True
+            }
+        )
     
     def _start_typing(self, chat_id: str) -> None:
         """Start sending 'typing...' indicator for a chat."""
