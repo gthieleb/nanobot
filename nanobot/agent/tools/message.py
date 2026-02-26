@@ -2,8 +2,41 @@
 
 from typing import Any, Awaitable, Callable
 
+from pydantic import BaseModel, ValidationError, field_validator
+
 from nanobot.agent.tools.base import Tool
 from nanobot.bus.events import OutboundMessage
+
+
+class InlineButton(BaseModel):
+    """Single inline button with validation."""
+    label: str
+    callback_data: str
+
+    @field_validator('label')
+    @classmethod
+    def label_not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError('Button label cannot be empty')
+        return v.strip()
+
+    @field_validator('callback_data')
+    @classmethod
+    def callback_data_not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError('callback_data cannot be empty')
+        return v.strip()
+
+
+class ButtonRow(BaseModel):
+    """A row of inline buttons."""
+    root: list[InlineButton]
+
+    def __iter__(self):
+        return iter(self.root)
+
+    def __len__(self):
+        return len(self.root)
 
 
 class MessageTool(Tool):
@@ -105,12 +138,21 @@ class MessageTool(Tool):
         if not self._send_callback:
             return "Error: Message sending not configured"
 
-        # Convert buttons dict format to tuple format for OutboundMessage
+        # Validate buttons with Pydantic
         buttons_tuples: list[list[tuple[str, str]]] = []
         if buttons:
-            for row in buttons:
-                row_tuples = [(btn["label"], btn["callback_data"]) for btn in row]
-                buttons_tuples.append(row_tuples)
+            try:
+                for row_idx, row in enumerate(buttons):
+                    validated_row = []
+                    for btn_idx, btn in enumerate(row):
+                        try:
+                            validated_btn = InlineButton(**btn)
+                            validated_row.append((validated_btn.label, validated_btn.callback_data))
+                        except ValidationError as e:
+                            return f"Button validation error (row {row_idx}, button {btn_idx}): {e}"
+                    buttons_tuples.append(validated_row)
+            except Exception as e:
+                return f"Button structure error: {str(e)}"
 
         msg = OutboundMessage(
             channel=channel,

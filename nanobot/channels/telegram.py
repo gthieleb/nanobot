@@ -158,8 +158,10 @@ class TelegramChannel(BaseChannel):
             )
         )
         
-        # Add callback query handler for inline keyboard button clicks
-        self._app.add_handler(CallbackQueryHandler(self._on_callback_query))
+        # Add callback query handler for inline keyboard button clicks (if enabled)
+        if self.config.inline_keyboards:
+            self._app.add_handler(CallbackQueryHandler(self._on_callback_query))
+            logger.debug("Inline keyboards enabled")
         
         logger.info("Starting Telegram bot (polling mode)...")
         
@@ -178,8 +180,11 @@ class TelegramChannel(BaseChannel):
             logger.warning("Failed to register bot commands: {}", e)
         
         # Start polling (this runs until stopped)
+        allowed_updates = ["message"]
+        if self.config.inline_keyboards:
+            allowed_updates.append("callback_query")
         await self._app.updater.start_polling(
-            allowed_updates=["message", "callback_query"],
+            allowed_updates=allowed_updates,
             drop_pending_updates=True  # Ignore old messages on startup
         )
         
@@ -268,9 +273,9 @@ class TelegramChannel(BaseChannel):
                 try:
                     html = _markdown_to_telegram_html(chunk)
                     
-                    # Build inline keyboard if buttons provided
+                    # Build inline keyboard if buttons provided and enabled
                     reply_markup = None
-                    if msg.buttons:
+                    if msg.buttons and self.config.inline_keyboards:
                         keyboard = [
                             [InlineKeyboardButton(label, callback_data=data) for label, data in row]
                             for row in msg.buttons
@@ -287,9 +292,9 @@ class TelegramChannel(BaseChannel):
                 except Exception as e:
                     logger.warning("HTML parse failed, falling back to plain text: {}", e)
                     try:
-                        # Build inline keyboard if buttons provided
+                        # Build inline keyboard if buttons provided and enabled
                         reply_markup = None
-                        if msg.buttons:
+                        if msg.buttons and self.config.inline_keyboards:
                             keyboard = [
                                 [InlineKeyboardButton(label, callback_data=data) for label, data in row]
                                 for row in msg.buttons
