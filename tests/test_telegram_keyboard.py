@@ -28,8 +28,8 @@ class TestBuildKeyboard:
         
         assert result is None
     
-    def test_reply_keyboard_when_disabled(self):
-        """Should build ReplyKeyboardMarkup when keyboard_buttons_enabled=False."""
+    def test_disabled_returns_none(self):
+        """Should return None when keyboard_buttons_enabled=False."""
         config = TelegramConfig(token="test", keyboard_buttons_enabled=False)
         channel = TelegramChannel(config, MagicMock())
         
@@ -41,10 +41,8 @@ class TestBuildKeyboard:
         
         result = channel._build_keyboard(buttons)
         
-        # Should be ReplyKeyboardMarkup
-        assert result is not None
-        assert hasattr(result, 'one_time_keyboard')
-        assert result.one_time_keyboard is True
+        # Should be None when disabled
+        assert result is None
     
     def test_inline_keyboard_when_enabled(self):
         """Should build InlineKeyboardMarkup when keyboard_buttons_enabled=True."""
