@@ -5,7 +5,7 @@ from typing import Any, Awaitable, Callable
 from pydantic import BaseModel, ValidationError, field_validator
 
 from nanobot.agent.tools.base import Tool
-from nanobot.bus.events import OutboundMessage
+from nanobot.bus.events import OutboundMessage, PollData
 
 
 class InlineButton(BaseModel):
@@ -101,6 +101,15 @@ class MessageTool(Tool):
                             "description": "Button label text"
                         }
                     }
+                },
+                "poll_question": {
+                    "type": "string",
+                    "description": "Optional: poll question (creates a poll instead of text message)"
+                },
+                "poll_options": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional: poll options (required if poll_question is set)"
                 }
             },
             "required": ["content"]
@@ -114,6 +123,8 @@ class MessageTool(Tool):
         message_id: str | None = None,
         media: list[str] | None = None,
         buttons: list[list[str]] | None = None,
+        poll_question: str | None = None,
+        poll_options: list[str] | None = None,
         **kwargs: Any
     ) -> str:
         channel = channel or self._default_channel
@@ -125,6 +136,13 @@ class MessageTool(Tool):
 
         if not self._send_callback:
             return "Error: Message sending not configured"
+
+        # Validate poll parameters
+        poll_data: PollData | None = None
+        if poll_question:
+            if not poll_options or len(poll_options) < 2:
+                return "Error: Poll requires at least 2 options"
+            poll_data = PollData(question=poll_question, options=poll_options)
 
         # Validate buttons - now just strings (labels)
         buttons_tuples: list[list[tuple[str, str]]] = []
@@ -152,6 +170,7 @@ class MessageTool(Tool):
                 "message_id": message_id,
             },
             buttons=buttons_tuples,
+            poll=poll_data,
         )
 
         try:
@@ -160,6 +179,7 @@ class MessageTool(Tool):
                 self._sent_in_turn = True
             media_info = f" with {len(media)} attachments" if media else ""
             buttons_info = f" with {sum(len(r) for r in buttons_tuples)} buttons" if buttons_tuples else ""
-            return f"Message sent to {channel}:{chat_id}{media_info}{buttons_info}"
+            poll_info = f" with poll" if poll_data else ""
+            return f"Message sent to {channel}:{chat_id}{media_info}{buttons_info}{poll_info}"
         except Exception as e:
             return f"Error sending message: {str(e)}"
