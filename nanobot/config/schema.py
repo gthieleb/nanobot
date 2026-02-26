@@ -31,7 +31,7 @@ class TelegramConfig(Base):
     allow_from: list[str] = Field(default_factory=list)  # Allowed user IDs or usernames
     proxy: str | None = None  # HTTP/SOCKS5 proxy URL, e.g. "http://127.0.0.1:7890" or "socks5://127.0.0.1:1080"
     reply_to_message: bool = False  # If true, bot replies quote the original message
-    inline_keyboards: bool = True  # Enable inline keyboard buttons for interactive messages
+    inline_keyboards: bool = False  # Enable inline keyboard buttons for interactive messages
 
 
 class FeishuConfig(Base):
