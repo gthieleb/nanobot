@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import re
 from loguru import logger
-from telegram import BotCommand, Update, ReplyParameters
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import BotCommand, Update, ReplyParameters, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from telegram.request import HTTPXRequest
 
 from nanobot.bus.events import OutboundMessage
@@ -160,6 +160,9 @@ class TelegramChannel(BaseChannel):
             )
         )
         
+        # Add callback query handler for inline keyboard button clicks
+        self._app.add_handler(CallbackQueryHandler(self._on_callback_query))
+        
         logger.info("Starting Telegram bot (polling mode)...")
         
         # Initialize and start polling
@@ -178,7 +181,7 @@ class TelegramChannel(BaseChannel):
         
         # Start polling (this runs until stopped)
         await self._app.updater.start_polling(
-            allowed_updates=["message"],
+            allowed_updates=["message", "callback_query"],
             drop_pending_updates=True  # Ignore old messages on startup
         )
         
@@ -271,19 +274,40 @@ class TelegramChannel(BaseChannel):
             for chunk in _split_message(msg.content):
                 try:
                     html = _markdown_to_telegram_html(chunk)
+                    
+                    # Build inline keyboard if buttons provided
+                    reply_markup = None
+                    if msg.buttons:
+                        keyboard = [
+                            [InlineKeyboardButton(label, callback_data=data) for label, data in row]
+                            for row in msg.buttons
+                        ]
+                        reply_markup = InlineKeyboardMarkup(keyboard)
+                    
                     await self._app.bot.send_message(
                         chat_id=chat_id, 
                         text=html, 
                         parse_mode="HTML",
-                        reply_parameters=reply_params
+                        reply_parameters=reply_params,
+                        reply_markup=reply_markup
                     )
                 except Exception as e:
                     logger.warning("HTML parse failed, falling back to plain text: {}", e)
                     try:
+                        # Build inline keyboard if buttons provided
+                        reply_markup = None
+                        if msg.buttons:
+                            keyboard = [
+                                [InlineKeyboardButton(label, callback_data=data) for label, data in row]
+                                for row in msg.buttons
+                            ]
+                            reply_markup = InlineKeyboardMarkup(keyboard)
+                        
                         await self._app.bot.send_message(
                             chat_id=chat_id, 
                             text=chunk,
-                            reply_parameters=reply_params
+                            reply_parameters=reply_params,
+                            reply_markup=reply_markup
                         )
                     except Exception as e2:
                         logger.error("Error sending Telegram message: {}", e2)
@@ -462,6 +486,51 @@ class TelegramChannel(BaseChannel):
         finally:
             self._media_group_tasks.pop(key, None)
 
+    async def _on_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle inline keyboard button clicks (callback queries)."""
+        if not update.callback_query or not update.effective_user:
+            return
+        
+        query = update.callback_query
+        user = update.effective_user
+        chat_id = query.message.chat_id if query.message else None
+        sender_id = self._sender_id(user)
+        
+        if not chat_id:
+            logger.warning("Callback query without chat_id")
+            return
+        
+        # Answer the callback query to remove the loading state
+        await query.answer()
+        
+        # Build content from callback data
+        callback_data = query.data or ""
+        
+        # Format as: [button:callback_data]
+        content = f"[button:{callback_data}]"
+        
+        logger.debug("Telegram callback query from {}: {}", sender_id, callback_data)
+        
+        str_chat_id = str(chat_id)
+        
+        # Start typing indicator before processing
+        self._start_typing(str_chat_id)
+        
+        # Forward to the message bus as a regular message
+        await self._handle_message(
+            sender_id=sender_id,
+            chat_id=str_chat_id,
+            content=content,
+            metadata={
+                "callback_query_id": query.id,
+                "callback_data": callback_data,
+                "user_id": user.id,
+                "username": user.username,
+                "first_name": user.first_name,
+                "is_callback": True
+            }
+        )
+    
     def _start_typing(self, chat_id: str) -> None:
         """Start sending 'typing...' indicator for a chat."""
         # Cancel any existing typing task for this chat

@@ -34,5 +34,7 @@ class OutboundMessage:
     reply_to: str | None = None
     media: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Inline keyboard buttons: list of rows, each row is list of (label, callback_data) tuples
+    buttons: list[list[tuple[str, str]]] = field(default_factory=list)
 
 
