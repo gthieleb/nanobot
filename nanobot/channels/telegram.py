@@ -447,6 +447,11 @@ class TelegramChannel(BaseChannel):
         # Start typing indicator before processing
         self._start_typing(str_chat_id)
         
+        # Extract reply_to_message_id if user replied to a message
+        reply_to_id = None
+        if message.reply_to_message:
+            reply_to_id = message.reply_to_message.message_id
+        
         # Forward to the message bus
         await self._handle_message(
             sender_id=sender_id,
@@ -458,7 +463,8 @@ class TelegramChannel(BaseChannel):
                 "user_id": user.id,
                 "username": user.username,
                 "first_name": user.first_name,
-                "is_group": message.chat.type != "private"
+                "is_group": message.chat.type != "private",
+                "reply_to_message_id": reply_to_id
             }
         )
     

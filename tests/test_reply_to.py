@@ -4,7 +4,32 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from nanobot.agent.tools.message import MessageTool
+from nanobot.agent.context import ContextBuilder
 from nanobot.bus.events import OutboundMessage
+
+
+class TestReplyToMetadata:
+    """Tests for reply_to_message_id in metadata (receiving replies)."""
+    
+    def test_runtime_context_shows_reply_to(self):
+        """Runtime context should show reply_to_message_id when present."""
+        metadata = {"reply_to_message_id": 12345}
+        ctx = ContextBuilder._build_runtime_context("telegram", "123", metadata)
+        
+        assert "Reply to message: 12345" in ctx
+    
+    def test_runtime_context_without_reply_to(self):
+        """Runtime context should work without reply_to_message_id."""
+        metadata = {"user_id": 999}
+        ctx = ContextBuilder._build_runtime_context("telegram", "123", metadata)
+        
+        assert "Reply to message" not in ctx
+    
+    def test_runtime_context_none_metadata(self):
+        """Runtime context should handle None metadata."""
+        ctx = ContextBuilder._build_runtime_context("telegram", "123", None)
+        
+        assert "Reply to message" not in ctx
 
 
 class TestReplyToParameter:
