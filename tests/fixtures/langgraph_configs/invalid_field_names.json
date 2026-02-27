@@ -1,0 +1,19 @@
+{
+  "langgraph": {
+    "enabled": true
+  },
+  "agents": {
+    "defaults": {
+      "model": "test-model",
+      "maxTokens": 4096,
+      "temperature": 0.7,
+      "maxToolIterations": 10
+    }
+  },
+  "providers": {
+    "custom": {
+      "apiKey": "test",
+      "apiBase": "http://localhost:8000/v1"
+    }
+  }
+}

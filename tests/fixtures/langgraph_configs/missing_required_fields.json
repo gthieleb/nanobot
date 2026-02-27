@@ -1,0 +1,10 @@
+{
+  "langgraph": {
+    "enabled": true
+  },
+  "agents": {
+    "defaults": {
+      "model": "test-model"
+    }
+  }
+}

@@ -1,5 +1,6 @@
 """Configuration loading utilities."""
 
+import os
 import json
 from pathlib import Path
 
@@ -17,7 +18,11 @@ def set_base_dir(path: Path) -> None:
 
 
 def get_config_path() -> Path:
-    """Get the default configuration file path."""
+    """Get the configuration file path from env var or default."""
+    env_config = os.environ.get("NANOBOT_CONFIG")
+    if env_config:
+        return Path(env_config).expanduser()
+
     base_dir = _BASE_DIR or Path.home() / ".nanobot"
     return base_dir / "config.json"
 
