@@ -49,15 +49,12 @@ class BaseChannel(ABC):
         pass
     
     @abstractmethod
-    async def send(self, msg: OutboundMessage) -> str | None:
+    async def send(self, msg: OutboundMessage) -> None:
         """
         Send a message through this channel.
         
         Args:
             msg: The message to send.
-        
-        Returns:
-            The message ID of the sent message, or None if not available.
         """
         pass
     

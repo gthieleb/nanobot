@@ -1,11 +1,10 @@
 """Unit tests for Telegram keyboard functionality."""
 
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 
 from nanobot.config.schema import TelegramConfig
 from nanobot.channels.telegram import TelegramChannel
-from nanobot.bus.events import OutboundMessage
 
 
 class TestBuildKeyboard:
@@ -119,58 +118,3 @@ class TestConfigKey:
         config = TelegramConfig(token="test", keyboard_buttons_enabled=True)
         
         assert config.keyboard_buttons_enabled is True
-
-
-class TestReplyTo:
-    """Tests for reply_to parameter in message sending."""
-    
-    @pytest.mark.asyncio
-    async def test_send_uses_explicit_reply_to(self):
-        """Should use explicit reply_to parameter for ReplyParameters."""
-        config = TelegramConfig(token="test", reply_to_message=False)
-        channel = TelegramChannel(config, MagicMock())
-        
-        # Mock the bot
-        mock_bot = AsyncMock()
-        mock_bot.send_message = AsyncMock(return_value=MagicMock(message_id=123))
-        channel._app = MagicMock()
-        channel._app.bot = mock_bot
-        
-        # Message with explicit reply_to
-        msg = OutboundMessage(
-            channel="telegram",
-            chat_id="12345",
-            content="Test reply",
-            reply_to="999"
-        )
-        
-        result = await channel.send(msg)
-        
-        # Should have called send_message with reply_parameters
-        call_args = mock_bot.send_message.call_args
-        assert call_args is not None
-        reply_params = call_args.kwargs.get('reply_parameters')
-        assert reply_params is not None
-        assert reply_params.message_id == 999
-    
-    @pytest.mark.asyncio
-    async def test_send_returns_message_id(self):
-        """Should return the sent message_id."""
-        config = TelegramConfig(token="test")
-        channel = TelegramChannel(config, MagicMock())
-        
-        # Mock the bot
-        mock_bot = AsyncMock()
-        mock_bot.send_message = AsyncMock(return_value=MagicMock(message_id=456))
-        channel._app = MagicMock()
-        channel._app.bot = mock_bot
-        
-        msg = OutboundMessage(
-            channel="telegram",
-            chat_id="12345",
-            content="Test message"
-        )
-        
-        result = await channel.send(msg)
-        
-        assert result == "456"

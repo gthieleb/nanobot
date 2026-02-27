@@ -36,7 +36,7 @@ class MessageTool(Tool):
 
     def __init__(
         self,
-        send_callback: Callable[[OutboundMessage], Awaitable[str | None]] | None = None,
+        send_callback: Callable[[OutboundMessage], Awaitable[None]] | None = None,
         default_channel: str = "",
         default_chat_id: str = "",
         default_message_id: str | None = None,
@@ -53,7 +53,7 @@ class MessageTool(Tool):
         self._default_chat_id = chat_id
         self._default_message_id = message_id
 
-    def set_send_callback(self, callback: Callable[[OutboundMessage], Awaitable[str | None]]) -> None:
+    def set_send_callback(self, callback: Callable[[OutboundMessage], Awaitable[None]]) -> None:
         """Set the callback for sending messages."""
         self._send_callback = callback
 
@@ -85,10 +85,6 @@ class MessageTool(Tool):
                 "chat_id": {
                     "type": "string",
                     "description": "Optional: target chat/user ID"
-                },
-                "reply_to": {
-                    "type": "string",
-                    "description": "Optional: message ID to reply to (for threaded conversations)"
                 },
                 "media": {
                     "type": "array",
@@ -124,7 +120,6 @@ class MessageTool(Tool):
         content: str,
         channel: str | None = None,
         chat_id: str | None = None,
-        reply_to: str | None = None,
         message_id: str | None = None,
         media: list[str] | None = None,
         buttons: list[list[str]] | None = None,
@@ -170,7 +165,6 @@ class MessageTool(Tool):
             channel=channel,
             chat_id=chat_id,
             content=content,
-            reply_to=reply_to,
             media=media or [],
             metadata={
                 "message_id": message_id,
@@ -180,17 +174,11 @@ class MessageTool(Tool):
         )
 
         try:
-            result = await self._send_callback(msg)
+            await self._send_callback(msg)
             self._sent_in_turn = True
             media_info = f" with {len(media)} attachments" if media else ""
             buttons_info = f" with {sum(len(r) for r in buttons_tuples)} buttons" if buttons_tuples else ""
             poll_info = f" with poll" if poll_data else ""
-            reply_info = f" (reply to {reply_to})" if reply_to else ""
-            
-            # Return message_id if available from channel
-            sent_id = result if isinstance(result, str) else None
-            if sent_id:
-                return f"Message sent to {channel}:{chat_id}{media_info}{buttons_info}{poll_info}{reply_info} [id={sent_id}]"
-            return f"Message sent to {channel}:{chat_id}{media_info}{buttons_info}{poll_info}{reply_info}"
+            return f"Message sent to {channel}:{chat_id}{media_info}{buttons_info}{poll_info}"
         except Exception as e:
             return f"Error sending message: {str(e)}"
