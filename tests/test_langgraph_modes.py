@@ -13,7 +13,7 @@ def tmp_path():
 
 
 @pytest.fixture
-def test_config_path(tmp_path):
+def config_dir(tmp_path):
     """Path to test config directory."""
     configs_dir = tmp_path / "langgraph_configs"
     configs_dir.mkdir(exist_ok=True)
@@ -44,11 +44,11 @@ def mock_bus():
 class TestConfigValidation:
     """Test config validation and field names."""
 
-    def test_valid_config_loads_correctly(test_config_path):
+    def test_valid_config_loads_correctly(config_dir):
         """Valid config should load without errors."""
         from nanobot.config.loader import load_config
 
-        test_config = test_config_path / "valid_config.json"
+        test_config = config_dir / "valid_config.json"
         os.environ["NANOBOT_CONFIG"] = str(test_config)
 
         # Should not raise
@@ -61,11 +61,11 @@ class TestConfigValidation:
         assert hasattr(config.agents.defaults, "max_tokens")
         assert hasattr(config.agents.defaults, "temperature")
 
-    def test_invalid_field_names_cause_error(test_config_path):
+    def test_invalid_field_names_cause_error(config_dir):
         """Config with camelCase fields should fail validation."""
         from nanobot.config.loader import load_config
 
-        invalid_config = test_config_path / "invalid_field_names.json"
+        invalid_config = config_dir / "invalid_field_names.json"
         os.environ["NANOBOT_CONFIG"] = str(invalid_config)
 
         # Should raise KeyError or ValueError
@@ -78,11 +78,11 @@ class TestConfigValidation:
         # This test documents the issue without enforcing strict validation
         assert not hasattr(config.agents.defaults, "maxTokens")
 
-    def test_langgraph_disabled_early_return(test_config_path):
+    def test_langgraph_disabled_early_return(config_dir):
         """LangGraph disabled should skip agent start."""
         from nanobot.langgraph.main import main
 
-        disabled_config = test_config_path / "langgraph_disabled.json"
+        disabled_config = config_dir / "langgraph_disabled.json"
         os.environ["NANOBOT_CONFIG"] = str(disabled_config)
 
         # Should return immediately (no timeout)
@@ -90,11 +90,11 @@ class TestConfigValidation:
         task = asyncio.create_task(main(mode="agent", message="Test"))
         asyncio.run(asyncio.wait_for(task, timeout=0.5))
 
-    def test_missing_required_fields_raises_error(test_config_path):
+    def test_missing_required_fields_raises_error(config_dir):
         """Config missing required fields should raise error."""
         from nanobot.config.loader import load_config
 
-        missing_config = test_config_path / "missing_required_fields.json"
+        missing_config = config_dir / "missing_required_fields.json"
         os.environ["NANOBOT_CONFIG"] = str(missing_config)
 
         # Config loader should handle this gracefully
