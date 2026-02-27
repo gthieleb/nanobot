@@ -234,11 +234,11 @@ class TelegramChannel(BaseChannel):
         ]
         return InlineKeyboardMarkup(keyboard)
     
-    async def send(self, msg: OutboundMessage) -> None:
-        """Send a message through Telegram."""
+    async def send(self, msg: OutboundMessage) -> str | None:
+        """Send a message through Telegram. Returns the message_id of the last sent message."""
         if not self._app:
             logger.warning("Telegram bot not running")
-            return
+            return None
 
         self._stop_typing(msg.chat_id)
 
@@ -246,16 +246,23 @@ class TelegramChannel(BaseChannel):
             chat_id = int(msg.chat_id)
         except ValueError:
             logger.error("Invalid chat_id: {}", msg.chat_id)
-            return
+            return None
 
         reply_params = None
-        if self.config.reply_to_message:
-            reply_to_message_id = msg.metadata.get("message_id")
-            if reply_to_message_id:
+        # Priority: explicit reply_to > metadata message_id (if reply_to_message enabled)
+        reply_to_id = msg.reply_to
+        if not reply_to_id and self.config.reply_to_message:
+            reply_to_id = msg.metadata.get("message_id")
+        if reply_to_id:
+            try:
                 reply_params = ReplyParameters(
-                    message_id=reply_to_message_id,
+                    message_id=int(reply_to_id),
                     allow_sending_without_reply=True
                 )
+            except (ValueError, TypeError):
+                logger.warning("Invalid reply_to message_id: {}", reply_to_id)
+
+        last_message_id: str | None = None
 
         # Send media files
         for media_path in (msg.media or []):
@@ -268,19 +275,23 @@ class TelegramChannel(BaseChannel):
                 }.get(media_type, self._app.bot.send_document)
                 param = "photo" if media_type == "photo" else media_type if media_type in ("voice", "audio") else "document"
                 with open(media_path, 'rb') as f:
-                    await sender(
+                    result = await sender(
                         chat_id=chat_id, 
                         **{param: f},
                         reply_parameters=reply_params
                     )
+                    if result:
+                        last_message_id = str(result.message_id)
             except Exception as e:
                 filename = media_path.rsplit("/", 1)[-1]
                 logger.error("Failed to send media {}: {}", media_path, e)
-                await self._app.bot.send_message(
+                result = await self._app.bot.send_message(
                     chat_id=chat_id,
                     text=f"[Failed to send: {filename}]",
                     reply_parameters=reply_params
                 )
+                if result:
+                    last_message_id = str(result.message_id)
 
         # Send poll if provided (only if feature enabled)
         if msg.poll and self.config.keyboard_buttons_enabled:
@@ -297,15 +308,18 @@ class TelegramChannel(BaseChannel):
                 if poll_msg and poll_msg.poll:
                     poll_id = poll_msg.poll.id
                     self._poll_chats[poll_id] = str(chat_id)
+                    last_message_id = str(poll_msg.message_id)
                     logger.debug("Sent poll {} to chat {}: {}", poll_id, chat_id, msg.poll.question[:50])
             except Exception as e:
                 logger.error("Failed to send poll: {}", e)
-                await self._app.bot.send_message(
+                result = await self._app.bot.send_message(
                     chat_id=chat_id,
                     text=f"[Failed to send poll: {msg.poll.question}]",
                     reply_parameters=reply_params
                 )
-            return  # Don't send text content when poll is sent
+                if result:
+                    last_message_id = str(result.message_id)
+            return last_message_id  # Don't send text content when poll is sent
 
         # Send text content
         if msg.content and msg.content != "[empty message]":
@@ -315,26 +329,32 @@ class TelegramChannel(BaseChannel):
                     
                     reply_markup = self._build_keyboard(msg.buttons) if msg.buttons else None
                     
-                    await self._app.bot.send_message(
+                    result = await self._app.bot.send_message(
                         chat_id=chat_id, 
                         text=html, 
                         parse_mode="HTML",
                         reply_parameters=reply_params,
                         reply_markup=reply_markup
                     )
+                    if result:
+                        last_message_id = str(result.message_id)
                 except Exception as e:
                     logger.warning("HTML parse failed, falling back to plain text: {}", e)
                     try:
                         reply_markup = self._build_keyboard(msg.buttons) if msg.buttons else None
                         
-                        await self._app.bot.send_message(
+                        result = await self._app.bot.send_message(
                             chat_id=chat_id, 
                             text=chunk,
                             reply_parameters=reply_params,
                             reply_markup=reply_markup
                         )
+                        if result:
+                            last_message_id = str(result.message_id)
                     except Exception as e2:
                         logger.error("Error sending Telegram message: {}", e2)
+        
+        return last_message_id
     
     async def _on_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command."""
