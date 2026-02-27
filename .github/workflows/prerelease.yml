@@ -97,7 +97,7 @@ jobs:
   pypi-test:
     runs-on: ubuntu-latest
     needs: version
-    if: needs.version.outputs.new_version == 'true' && secrets.TEST_PYPI_TOKEN != ''
+    if: needs.version.outputs.new_version == 'true' && ${{ secrets.TEST_PYPI_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
       
