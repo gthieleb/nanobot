@@ -12,9 +12,10 @@ class SubagentMessenger:
     Ermöglicht asynchrone Adjustierungen zwischen Subagent und Main Agent.
     """
 
-    def __init__(self, bus, on_adjustment: Callable):
+    def __init__(self, bus, on_adjustment: Callable, timeout_sec: float = 30.0):
         self.bus = bus
         self.on_adjustment = on_adjustment
+        self.timeout_sec = timeout_sec
         self._pending_adjustments: dict[str, asyncio.Queue] = {}
 
     async def request_adjustment(self, task_id: str, current_context: list[dict]) -> dict | None:
@@ -51,7 +52,9 @@ Should I adjust my approach? Please provide feedback.
             )
             return adjustment
         except asyncio.TimeoutError:
-            logger.warning("Subagent [{}] adjustment request timed out", task_id)
+            logger.warning(
+                "Subagent [{}] adjustment request timed out after {}s", task_id, self.timeout_sec
+            )
             return None
         finally:
             self._pending_adjustments.pop(task_id, None)

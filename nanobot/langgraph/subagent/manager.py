@@ -2,7 +2,7 @@
 
 import asyncio
 from datetime import datetime
-from typing import Any
+from typing import Optional, Any
 
 from nanobot.langgraph.graph.state import SubagentState, AgentState
 from nanobot.langgraph.subagent.adapter import SubagentToolAdapter
@@ -34,9 +34,16 @@ class SubagentManager:
         # Messenger für asynchrone Adjustierungen
         self.messenger = SubagentMessenger(bus=bus, on_adjustment=self.handle_adjustment)
 
-    async def run_subagent(
-        self, task_id: str, task: str, label: str | None, initial_context: dict, state_ref: dict
-    ):
+from typing import Optional
+
+async def run_subagent(
+        self,
+        task_id: str,
+        task: str,
+        label: Optional[str],
+        initial_context: dict,
+        state_ref: dict
+):
         """
         Führt Subagent mit ReAct-Loop aus.
         """
@@ -163,30 +170,51 @@ You are a subagent spawned by the main agent to complete a specific task.
 - Access the main agent's conversation history (only initial context provided)"""
 
     async def _announce_completion(
-        self, task_id: str, label: str, task: str, result: str, state_ref: dict
+        self,
+        task_id: str,
+        label: Optional[str],
+        task: str,
+        result: Optional[str],
+        state_ref: dict
     ):
         """
         Meldet Abschluss an Main Agent via Message Bus.
         """
-        # Subagent Task als completed markieren
-        subagent_tasks = state_ref.get("subagent_tasks", [])
-        for task_entry in subagent_tasks:
+        # Thread-sichere Kopie des State machen
+        if "subagent_tasks" not in state_ref:
+            state_ref["subagent_tasks"] = []
+
+        # Task-Updates in einer Kopie vornehmen
+        updated_tasks = list(state_ref["subagent_tasks"])
+        for task_entry in updated_tasks:
             if task_entry.get("task_id") == task_id:
                 task_entry["status"] = "completed"
                 task_entry["result"] = result
                 task_entry["completed_at"] = datetime.now().isoformat()
                 break
 
+        # Updates in State zurückschreiben
+        state_ref["subagent_tasks"] = updated_tasks
+
         # System Message an State anhängen
-        announce_content = f"""[Subagent '{label}' completed]
+        display_label = label or "subagent"
+        result_text = result or "No result"
+        announce_content = f"""[Subagent '{display_label}' completed]
 
 Task: {task}
 
 Result:
-{result}
+{result_text}
 
 Summarize this naturally for the user. Keep it brief (1-2 sentences)."""
 
-        state_ref["messages"].append({"role": "system", "content": announce_content})
+        if "messages" not in state_ref:
+            state_ref["messages"] = []
+
+        # Thread-sicheres Anhängen
+        new_messages = list(state_ref["messages"]) + [
+            {"role": "system", "content": announce_content}
+        ]
+        state_ref["messages"] = new_messages
 
         logger.info("Subagent [{}] completed", task_id)

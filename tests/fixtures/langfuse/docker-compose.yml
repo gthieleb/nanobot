@@ -1,0 +1,30 @@
+version: "3.8"
+
+services:
+  langfuse:
+    image: langfuse/langfuse-server:latest
+    ports:
+      - "4000:4000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:5432/postgres
+      - REDIS_URL=redis://redis:6379:6379
+      - LANGFUSE_SECRET=${LANGFUSE_SECRET}
+      - ENCRYPTION_KEY_32=${ENCRYPTION_KEY_32}
+    
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    ports:
+      - "4317:4317"
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://langfuse:4000
+      - OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic ${LANGFUSE_API_KEY}
+  
+  postgres:
+    image: postgres:15
+    environment:
+      - POSTGRES_PASSWORD=postgres
+  
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"

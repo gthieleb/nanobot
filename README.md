@@ -880,8 +880,13 @@ nanobot/
 ├── providers/      # 🤖 LLM providers (OpenRouter, etc.)
 ├── session/        # 💬 Conversation sessions
 ├── config/         # ⚙️ Configuration
+├── langgraph/      # 🔄 LangGraph integration (experimental)
 └── cli/            # 🖥️ Commands
 ```
+
+## 📚 Documentation
+
+- [LangGraph vs DeepAgents Comparison](langgraph-vs-deepagents.md) - Detailed feature comparison between Nanobot's custom LangGraph implementation and LangChain DeepAgents framework
 
 ## 🤝 Contribute & Roadmap
 

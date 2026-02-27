@@ -12,3 +12,6 @@ class LangGraphSettings(BaseModel):
     adjustment_interval: int = Field(
         default=3, description="Alle N Iterationen Adjustierung anfragen"
     )
+    adjustment_timeout_sec: float = Field(
+        default=30.0, description="Timeout für Adjustierungs-Requests (Sekunden)"
+    )
