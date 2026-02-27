@@ -34,16 +34,9 @@ class SubagentManager:
         # Messenger für asynchrone Adjustierungen
         self.messenger = SubagentMessenger(bus=bus, on_adjustment=self.handle_adjustment)
 
-from typing import Optional
-
-async def run_subagent(
-        self,
-        task_id: str,
-        task: str,
-        label: Optional[str],
-        initial_context: dict,
-        state_ref: dict
-):
+    async def run_subagent(
+        self, task_id: str, task: str, label: Optional[str], initial_context: dict, state_ref: dict
+    ):
         """
         Führt Subagent mit ReAct-Loop aus.
         """
@@ -170,12 +163,7 @@ You are a subagent spawned by the main agent to complete a specific task.
 - Access the main agent's conversation history (only initial context provided)"""
 
     async def _announce_completion(
-        self,
-        task_id: str,
-        label: Optional[str],
-        task: str,
-        result: Optional[str],
-        state_ref: dict
+        self, task_id: str, label: Optional[str], task: str, result: Optional[str], state_ref: dict
     ):
         """
         Meldet Abschluss an Main Agent via Message Bus.
