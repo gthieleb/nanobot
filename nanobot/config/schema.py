@@ -171,19 +171,12 @@ class QQConfig(Base):
     )  # Allowed user openids (empty = public access)
 
 
-class ChannelsConfig(Base):
-    """Configuration for chat channels."""
+class LitellmProxySettings(BaseModel):
+    """Litellm Proxy Configuration."""
 
-    whatsapp: WhatsAppConfig = Field(default_factory=WhatsAppConfig)
-    telegram: TelegramConfig = Field(default_factory=TelegramConfig)
-    discord: DiscordConfig = Field(default_factory=DiscordConfig)
-    feishu: FeishuConfig = Field(default_factory=FeishuConfig)
-    mochat: MochatConfig = Field(default_factory=MochatConfig)
-    dingtalk: DingTalkConfig = Field(default_factory=DingTalkConfig)
-    email: EmailConfig = Field(default_factory=EmailConfig)
-    slack: SlackConfig = Field(default_factory=SlackConfig)
-    qq: QQConfig = Field(default_factory=QQConfig)
-    observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
+    enabled: bool = Field(default=False, description="Litellm Proxy aktivieren")
+    proxy_url: str = Field(default="", description="Proxy URL")
+    model: str = Field(default="litellm/claude-opus-4-5", description="Model für Proxy")
 
 
 class ObservabilitySettings(BaseModel):
@@ -199,12 +192,19 @@ class ObservabilitySettings(BaseModel):
     )
 
 
-class LitellmProxySettings(BaseModel):
-    """Litellm Proxy Configuration."""
+class ChannelsConfig(Base):
+    """Configuration for chat channels."""
 
-    enabled: bool = Field(default=False, description="Litellm Proxy aktivieren")
-    proxy_url: str = Field(default="", description="Proxy URL")
-    model: str = Field(default="litellm/claude-opus-4-5", description="Model für Proxy")
+    whatsapp: WhatsAppConfig = Field(default_factory=WhatsAppConfig)
+    telegram: TelegramConfig = Field(default_factory=TelegramConfig)
+    discord: DiscordConfig = Field(default_factory=DiscordConfig)
+    feishu: FeishuConfig = Field(default_factory=FeishuConfig)
+    mochat: MochatConfig = Field(default_factory=MochatConfig)
+    dingtalk: DingTalkConfig = Field(default_factory=DingTalkConfig)
+    email: EmailConfig = Field(default_factory=EmailConfig)
+    slack: SlackConfig = Field(default_factory=SlackConfig)
+    qq: QQConfig = Field(default_factory=QQConfig)
+    observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
 
 
 class AgentDefaults(Base):
@@ -303,6 +303,15 @@ class ToolsConfig(Base):
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
 
 
+class LangGraphConfig(Base):
+    """LangGraph configuration."""
+
+    enabled: bool = False
+    checkpoint_type: str = "memory"
+    subagent_max_iterations: int = 15
+    adjustment_interval: int = 3
+
+
 class Config(BaseSettings):
     """Root configuration for nanobot."""
 
@@ -311,6 +320,7 @@ class Config(BaseSettings):
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
+    langgraph: LangGraphConfig = Field(default_factory=LangGraphConfig)
 
     @property
     def workspace_path(self) -> Path:

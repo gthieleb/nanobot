@@ -21,7 +21,12 @@ async def call_model(state: AgentState, config) -> dict[str, Any]:
     messages = []
     for msg in state["messages"]:
         if hasattr(msg, "type"):
+            # LangGraph uses "human" and "ai", but LLMs expect "user" and "assistant"
             role = msg.type
+            if role == "human":
+                role = "user"
+            elif role == "ai":
+                role = "assistant"
             content = msg.content if hasattr(msg, "content") else str(msg)
         elif isinstance(msg, str):
             role = "user"

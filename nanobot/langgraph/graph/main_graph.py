@@ -67,14 +67,14 @@ def create_main_graph(config) -> StateGraph:
         {"spawn": "spawn_subagent", "continue": "tools", "end": "update_state"},
     )
 
-    # Spawn Subagent → zurück zu Agent
+    # Spawn Subagent → State Update
     graph.add_edge("spawn_subagent", "update_state")
 
-    # Tools → State Update → zurück zu Agent
+    # Tools → State Update
     graph.add_edge("tools", "update_state")
-    graph.add_edge("update_state", "agent")
 
-    # Update State → Prüfen, ob fertig
+    # Update State → Prüfen, ob fertig (conditional)
+    # WICHTIG: Keine feste Kante zu agent, sonst endlosschleife!
     graph.add_conditional_edges("update_state", should_continue, {"continue": "agent", "end": END})
 
     return graph

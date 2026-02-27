@@ -26,10 +26,12 @@ def spawn_subagent_node(state: AgentState, config) -> dict[str, Any]:
         return state
     
     # Spawn Tool-Aufruf finden
-    spawn_call = next(
-        (tc for tc in tool_calls if tc.get("name") == "spawn" if isinstance(tc, dict) else tc.name == "spawn"),
-        None
-    )
+    def is_spawn_call(tc):
+        if isinstance(tc, dict):
+            return tc.get("name") == "spawn"
+        return getattr(tc, "name", None) == "spawn"
+
+    spawn_call = next((tc for tc in tool_calls if is_spawn_call(tc)), None)
     
     if not spawn_call:
         return state
