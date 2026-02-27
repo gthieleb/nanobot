@@ -60,18 +60,32 @@ class TestBuildKeyboard:
         assert result is not None
         assert hasattr(result, 'inline_keyboard')
     
-    def test_inline_keyboard_button_callback_data_is_label(self):
-        """Inline keyboard buttons should use label as callback_data."""
+    def test_inline_keyboard_button_uses_callback_data(self):
+        """Inline keyboard buttons should use second tuple element as callback_data."""
         config = TelegramConfig(token="test", keyboard_buttons_enabled=True)
         channel = TelegramChannel(config, MagicMock())
-        
-        buttons = [[("My Button", "ignored_callback")]]
-        
+
+        buttons = [[("My Button", "custom_callback")]]
+
         result = channel._build_keyboard(buttons)
-        
-        # Check that callback_data equals the label
+
+        # Check that callback_data uses the second tuple element
         button = result.inline_keyboard[0][0]
-        assert button.callback_data == "My Button"
+        assert button.text == "My Button"
+        assert button.callback_data == "custom_callback"
+
+    def test_inline_keyboard_button_defaults_to_label(self):
+        """Inline keyboard buttons without tuple should use label as callback_data."""
+        config = TelegramConfig(token="test", keyboard_buttons_enabled=True)
+        channel = TelegramChannel(config, MagicMock())
+
+        buttons = [["Simple Button"]]
+
+        result = channel._build_keyboard(buttons)
+
+        button = result.inline_keyboard[0][0]
+        assert button.text == "Simple Button"
+        assert button.callback_data == "Simple Button"
     
     def test_single_row_buttons(self):
         """Should handle single row of buttons."""
