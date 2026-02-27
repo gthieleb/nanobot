@@ -5,11 +5,11 @@ from __future__ import annotations
 import asyncio
 import re
 from loguru import logger
-from telegram import BotCommand, Update, ReplyParameters
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import BotCommand, Update, ReplyParameters, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from telegram.request import HTTPXRequest
 
-from nanobot.bus.events import OutboundMessage
+from nanobot.bus.events import OutboundMessage, PollData
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
 from nanobot.config.schema import TelegramConfig
@@ -129,6 +129,7 @@ class TelegramChannel(BaseChannel):
         self._typing_tasks: dict[str, asyncio.Task] = {}  # chat_id -> typing loop task
         self._media_group_buffers: dict[str, dict] = {}
         self._media_group_tasks: dict[str, asyncio.Task] = {}
+        self._poll_chats: dict[str, str] = {}  # poll_id -> chat_id for poll answer routing
     
     async def start(self) -> None:
         """Start the Telegram bot with long polling."""
@@ -160,6 +161,13 @@ class TelegramChannel(BaseChannel):
             )
         )
         
+        # Add callback query handler and poll handler (if enabled)
+        if self.config.keyboard_buttons_enabled:
+            self._app.add_handler(CallbackQueryHandler(self._on_callback_query))
+            from telegram.ext import PollAnswerHandler
+            self._app.add_handler(PollAnswerHandler(self._on_poll_answer))
+            logger.debug("Inline keyboards and polls enabled")
+        
         logger.info("Starting Telegram bot (polling mode)...")
         
         # Initialize and start polling
@@ -177,8 +185,11 @@ class TelegramChannel(BaseChannel):
             logger.warning("Failed to register bot commands: {}", e)
         
         # Start polling (this runs until stopped)
+        allowed_updates = ["message", "poll", "poll_answer"]
+        if self.config.keyboard_buttons_enabled:
+            allowed_updates.append("callback_query")
         await self._app.updater.start_polling(
-            allowed_updates=["message"],
+            allowed_updates=allowed_updates,
             drop_pending_updates=True  # Ignore old messages on startup
         )
         
@@ -218,6 +229,18 @@ class TelegramChannel(BaseChannel):
             return "audio"
         return "document"
 
+    def _build_keyboard(self, buttons: list) -> InlineKeyboardMarkup | None:
+        """Build inline keyboard markup if feature is enabled."""
+        if not buttons or not self.config.keyboard_buttons_enabled:
+            return None
+        
+        # Inline keyboard - buttons attached to message
+        keyboard = [
+            [InlineKeyboardButton(label, callback_data=label) for label, _ in row]
+            for row in buttons
+        ]
+        return InlineKeyboardMarkup(keyboard)
+    
     async def send(self, msg: OutboundMessage) -> None:
         """Send a message through Telegram."""
         if not self._app:
@@ -266,24 +289,56 @@ class TelegramChannel(BaseChannel):
                     reply_parameters=reply_params
                 )
 
+        # Send poll if provided (only if feature enabled)
+        if msg.poll and self.config.keyboard_buttons_enabled:
+            try:
+                poll_msg = await self._app.bot.send_poll(
+                    chat_id=chat_id,
+                    question=msg.poll.question,
+                    options=msg.poll.options,
+                    is_anonymous=msg.poll.is_anonymous,
+                    allows_multiple_answers=msg.poll.allows_multiple_answers,
+                    reply_parameters=reply_params
+                )
+                # Track poll for answer routing
+                if poll_msg and poll_msg.poll:
+                    poll_id = poll_msg.poll.id
+                    self._poll_chats[poll_id] = str(chat_id)
+                    logger.debug("Sent poll {} to chat {}: {}", poll_id, chat_id, msg.poll.question[:50])
+            except Exception as e:
+                logger.error("Failed to send poll: {}", e)
+                await self._app.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"[Failed to send poll: {msg.poll.question}]",
+                    reply_parameters=reply_params
+                )
+            return  # Don't send text content when poll is sent
+
         # Send text content
         if msg.content and msg.content != "[empty message]":
             for chunk in _split_message(msg.content):
                 try:
                     html = _markdown_to_telegram_html(chunk)
+                    
+                    reply_markup = self._build_keyboard(msg.buttons) if msg.buttons else None
+                    
                     await self._app.bot.send_message(
                         chat_id=chat_id, 
                         text=html, 
                         parse_mode="HTML",
-                        reply_parameters=reply_params
+                        reply_parameters=reply_params,
+                        reply_markup=reply_markup
                     )
                 except Exception as e:
                     logger.warning("HTML parse failed, falling back to plain text: {}", e)
                     try:
+                        reply_markup = self._build_keyboard(msg.buttons) if msg.buttons else None
+                        
                         await self._app.bot.send_message(
                             chat_id=chat_id, 
                             text=chunk,
-                            reply_parameters=reply_params
+                            reply_parameters=reply_params,
+                            reply_markup=reply_markup
                         )
                     except Exception as e2:
                         logger.error("Error sending Telegram message: {}", e2)
@@ -462,6 +517,103 @@ class TelegramChannel(BaseChannel):
         finally:
             self._media_group_tasks.pop(key, None)
 
+    async def _on_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle inline keyboard button clicks (callback queries)."""
+        if not update.callback_query or not update.effective_user:
+            return
+        
+        query = update.callback_query
+        user = update.effective_user
+        chat_id = query.message.chat_id if query.message else None
+        sender_id = self._sender_id(user)
+        
+        if not chat_id:
+            logger.warning("Callback query without chat_id")
+            return
+        
+        # The callback_data IS the button label
+        button_label = query.data or ""
+        
+        # Answer the callback query to remove the loading state
+        await query.answer(text=f"✓ {button_label[:30]}", show_alert=False)
+        
+        # Remove the inline keyboard from the original message
+        if query.message:
+            try:
+                await query.message.edit_reply_markup(reply_markup=None)
+            except Exception as e:
+                logger.debug("Could not remove keyboard: {}", e)
+        
+        # Send button label directly as message content
+        content = button_label
+        
+        logger.debug("Telegram callback query from {}: {}", sender_id, button_label)
+        
+        str_chat_id = str(chat_id)
+        
+        # Start typing indicator before processing
+        self._start_typing(str_chat_id)
+        
+        # Forward to the message bus
+        await self._handle_message(
+            sender_id=sender_id,
+            chat_id=str_chat_id,
+            content=content,
+            metadata={
+                "callback_query_id": query.id,
+                "button_label": button_label,
+                "user_id": user.id,
+                "username": user.username,
+                "first_name": user.first_name,
+                "is_callback": True
+            }
+        )
+    
+    async def _on_poll_answer(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle poll answer submissions."""
+        if not update.poll_answer:
+            return
+        
+        poll_answer = update.poll_answer
+        user = poll_answer.user
+        if not user:
+            logger.warning("Poll answer without user")
+            return
+        
+        sender_id = self._sender_id(user)
+        poll_id = poll_answer.poll_id
+        option_ids = poll_answer.option_ids or []
+        
+        # Find chat_id from tracked polls
+        chat_id = self._poll_chats.get(poll_id)
+        if not chat_id:
+            logger.warning("Poll answer for unknown poll: {}", poll_id)
+            return
+        
+        # Format as: [poll:ID:options]
+        options_str = ",".join(str(i) for i in option_ids)
+        content = f"[poll:{poll_id}:{options_str}]"
+        
+        logger.debug("Telegram poll answer from {}: poll {} options {}", sender_id, poll_id, options_str)
+        
+        # Start typing indicator before processing
+        self._start_typing(chat_id)
+        
+        # Forward to the message bus
+        await self._handle_message(
+            sender_id=sender_id,
+            chat_id=chat_id,
+            content=content,
+            metadata={
+                "poll_id": poll_id,
+                "option_ids": option_ids,
+                "user_id": user.id,
+                "username": user.username,
+                "first_name": user.first_name,
+                "is_poll_answer": True
+            }
+        )
+    
     def _start_typing(self, chat_id: str) -> None:
         """Start sending 'typing...' indicator for a chat."""
         # Cancel any existing typing task for this chat
