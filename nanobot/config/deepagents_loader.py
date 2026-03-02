@@ -125,8 +125,16 @@ def merge_with_nanobot_config(
     merged.backend.path_append = nanobot_config.tools.exec.path_append
     merged.backend.restrict_to_workspace = nanobot_config.tools.restrict_to_workspace
 
-    if not merged.skills:
+    if not deepagents_config.skills or len(deepagents_config.skills) == 0:
         merged.skills = [str(workspace / "skills")]
+    elif any("~/.nanobot" in s for s in deepagents_config.skills):
+        expanded_skills = []
+        for skill_path in deepagents_config.skills:
+            if "~/.nanobot/workspace" in skill_path:
+                expanded_skills.append(str(workspace / "skills"))
+            else:
+                expanded_skills.append(skill_path)
+        merged.skills = expanded_skills
 
     merged.middleware.enable_subagents = True
 
