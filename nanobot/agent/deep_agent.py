@@ -16,6 +16,9 @@ from langchain_core.messages import HumanMessage
 from langchain_core.tools import StructuredTool
 from loguru import logger
 
+from nanobot.config.deepagents_schema import DeepAgentsConfig
+from nanobot.config.deepagents_loader import merge_with_nanobot_config
+
 if TYPE_CHECKING:
     from nanobot.bus.events import InboundMessage, OutboundMessage
     from nanobot.config.schema import Config
@@ -24,12 +27,6 @@ try:
     from deepagents import create_deep_agent
     from deepagents.backends import FilesystemBackend, StateBackend
     from deepagents.backends.protocol import BackendProtocol
-    from deepagents.middleware import (
-        FilesystemMiddleware,
-        SkillsMiddleware,
-        SubAgentMiddleware,
-        SummarizationMiddleware,
-    )
 
     DEEPAGENTS_AVAILABLE = True
 except ImportError:
@@ -45,11 +42,13 @@ class DeepAgent:
     - Subagent spawning via task tool
     - Session checkpointing
     - Multi-channel message routing
+    - Config from nanobot + deepagents.json
 
     Args:
         workspace: Workspace directory for file operations
         config: nanobot configuration
         checkpointer: Session checkpointer instance
+        deepagents_config: Optional DeepAgentsConfig (loaded if None)
 
     Example:
         >>> from nanobot.langgraph import SessionCheckpointer
@@ -63,6 +62,7 @@ class DeepAgent:
         workspace: Path,
         config: "Config",
         checkpointer: Any | None = None,
+        deepagents_config: DeepAgentsConfig | None = None,
     ):
         if not DEEPAGENTS_AVAILABLE:
             raise ImportError("deepagents is not installed. Install with: pip install deepagents")
@@ -71,6 +71,8 @@ class DeepAgent:
         self.config = config
         self.checkpointer = checkpointer
 
+        self.dg_config = merge_with_nanobot_config(config, deepagents_config)
+
         self._agent = None
         self._backend: BackendProtocol | None = None
         self._tools: list[Any] = []
@@ -78,19 +80,37 @@ class DeepAgent:
         self._mcp_connected = False
         self._mcp_servers = config.tools.mcp_servers if hasattr(config, "tools") else {}
 
-    def _get_model_spec(self) -> str:
-        """Get model specification from config."""
-        model = self.config.agents.defaults.model if hasattr(self.config, "agents") else None
-        if not model:
-            model = "anthropic:claude-sonnet-4-5"
+    def _init_model(self) -> Any:
+        """Initialize model with config from nanobot and deepagents."""
+        from langchain.chat_models import init_chat_model
 
-        provider = self.config.agents.defaults.provider if hasattr(self.config, "agents") else None
-        if provider and ":" not in model:
-            model = f"{provider}:{model}"
+        model_name = self.dg_config.model.name
+        api_key = self.dg_config.model.api_key
+        api_base = self.dg_config.model.api_base
 
-        return model
+        if not model_name:
+            model_name = self.config.agents.defaults.model
+            provider_config = self.config.get_provider(model_name)
+            if provider_config:
+                if not api_key:
+                    api_key = provider_config.api_key
+                if not api_base:
+                    api_base = provider_config.api_base
 
-    def _get_backend(self) -> BackendProtocol:
+        if not model_name:
+            model_name = "anthropic:claude-sonnet-4-5"
+
+        kwargs = {}
+        if api_key:
+            kwargs["api_key"] = api_key
+        if api_base:
+            kwargs["base_url"] = api_base
+        kwargs["max_tokens"] = self.dg_config.model.max_tokens
+        kwargs["temperature"] = self.dg_config.model.temperature
+
+        return init_chat_model(model_name, **kwargs)
+
+    def _init_backend(self) -> BackendProtocol:
         """Get or create the backend for file operations."""
         if self._backend is None:
             self._backend = FilesystemBackend(root_dir=self.workspace)
@@ -104,8 +124,8 @@ class DeepAgent:
 
     def _create_agent(self) -> Any:
         """Create the deep agent with configured middleware."""
-        model = self._get_model_spec()
-        backend = self._get_backend()
+        model = self._init_model()
+        backend = self._init_backend()
         custom_tools = self._build_custom_tools()
 
         system_prompt = self._build_system_prompt()
@@ -116,9 +136,16 @@ class DeepAgent:
             system_prompt=system_prompt,
             backend=backend,
             checkpointer=self.checkpointer,
+            skills=self.dg_config.get_skills_paths(self.workspace),
+            memory=self.dg_config.get_memory_paths(self.workspace),
+            interrupt_on=self.dg_config.get_interrupt_on_config()
+            if any(self.dg_config.get_interrupt_on_config().values())
+            else None,
+            debug=self.dg_config.debug,
+            name=self.dg_config.name,
         )
 
-        return agent
+        return agent.with_config({"recursion_limit": self.dg_config.recursion_limit})
 
     def _build_system_prompt(self) -> str:
         """Build system prompt with nanobot context."""
