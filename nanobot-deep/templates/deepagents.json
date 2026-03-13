@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DeepAgents Configuration",
+  "description": "DeepAgents-specific settings for LangGraph backend. LLM/provider settings are in config.json.",
+  
+  "model": {
+    "name": null,
+    "api_key": null,
+    "api_base": null,
+    "max_tokens": 20000,
+    "temperature": 0.1
+  },
+  
+  "recursion_limit": 500,
+  "debug": false,
+  "name": "nanobot-deep-agent",
+  
+  "backend": {
+    "sandbox_id": null,
+    "setup_script": null,
+    "restrict_to_workspace": false,
+    "exec_timeout": 60,
+    "path_append": ""
+  },
+  
+  "checkpointer": {
+    "type": "sqlite",
+    "path": "~/.nanobot/sessions.db"
+  },
+  
+  "skills": ["~/.nanobot/workspace/skills"],
+  "memory": [],
+  
+  "subagents": [
+    {
+      "name": "reply-handler",
+      "description": "Handles replies to messages with full context. Use when the user is replying to a specific message and needs context-aware responses.",
+      "system_prompt": "You are a reply assistant that handles responses to specific messages. You have access to the original message context. Provide relevant, contextual responses that acknowledge and build upon the message being replied to. Be concise and helpful.",
+      "model": null
+    }
+  ],
+  
+  "task_routing": {
+    "auto_delegate_reply_to": true,
+    "control_commands": ["/help", "/new", "/stop", "/tasks", "/start"],
+    "delegate_threshold_tokens": 1000
+  },
+  
+  "interrupt_on": {
+    "edit_file": false,
+    "write_file": false,
+    "execute": false,
+    "all_tools": false
+  },
+  
+  "summarization": {
+    "enabled": true,
+    "trigger_tokens": 100000,
+    "keep_messages": 20
+  },
+  
+  "middleware": {
+    "enable_todolist": true,
+    "enable_summarization": true,
+    "enable_prompt_caching": true,
+    "enable_skills": true,
+    "enable_memory": true,
+    "enable_subagents": true,
+    "enable_filesystem": true
+  }
+}
